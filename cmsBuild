@@ -2810,6 +2810,8 @@ def parseOptions():
                                     help="CSV of package(s) which should not be taken from reference repostiroy.")
     advancedBuildOptions.add_option("--new-scheduler", dest="newScheduler", action="store_true",
                                     default=False, help="Use the new scheduler to install / build packages")
+    advancedBuildOptions.add_option("--with-rpmbuild-monitor-script", dest="monitorScript",
+                                    default="", help="Path to monitor script")
     # FIXME: change option to --no-deprecate and do the deprecation
     #        automatically by default.
     # parser.add_option ("--deprecate-local",
@@ -3256,6 +3258,14 @@ def buildPackage(pkg, scheduler):
                       " TMPDIR=%(tmpdir)s %(prefix)s rpmbuild %(nodeps)s --buildroot %(buildRoot)s -ba --define '_topdir %(topdir)s'" \
                       " %(makeprocesses)s %(ignoreCompileErrors)s %(extraRpmDefines)s" \
                       " %(specdir)s/spec >%(builddir)s/log 2>&1" % optionsDict
+
+    if opts.monitorScript:
+        optionsDict.update({"arch": opts.architecture, "pkg_name": pkg.name, "monitor_script": opts.monitorScript })
+        rpmbuild_call = "rpmbuild %(nodeps)s --buildroot %(buildRoot)s -ba --define '_topdir %(topdir)s' %(makeprocesses)s %(ignoreCompileErrors)s %(extraRpmDefines)s %(specdir)s/spec >%(builddir)s/log 2>&1" % optionsDict
+        rpmbuildCommand = "rm -rf %(builddir)s/pkgtools-pkg-src-move2git ; %(rpmenv)s ; " \
+                        " TMPDIR=%(tmpdir)s %(prefix)s %(monitor_script)s -a %(arch)s -o %(pkg_name)s -c " % optionsDict
+        rpmbuildCommand = rpmbuildCommand + '"' + rpmbuild_call.replace('"', '\\"') + '"'
+
     if pkg.pkgExtraRepo:
         rep = pkg.pkgExtraRepo
         exrpm=format("%(tmpdir)s/repo/%(rep)s/%(arch)s/var/cmspkg/rpms/%(rpmname)s",
