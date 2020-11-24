@@ -60,11 +60,12 @@ class Scheduler(object):
     self.pendingJobs.append("final-job")
 
   def run(self):
-    for i in xrange(self.parallelThreads):
-      t = Thread(target=self.__createWorker())
-      t.daemon = True
-      t.start()
-    
+    # OR check the number of build tasks and create that number of workers
+    t = Thread(target=self.__createWorker())
+    t.daemon = True
+    t.start()
+    # have one as default
+ 
     self.notifyMaster(self.__rescheduleParallel)
     # Wait until all the workers are done.
     while self.parallelThreads:
@@ -147,8 +148,26 @@ class Scheduler(object):
           self.log("Pending tasks: %s: %s" % (taskId, pendingDeps),30)
         continue
       # No broken dependencies and no pending ones. we can continue.
-      transition(taskId, self.pendingJobs, self.runningJobs)
-      self.__scheduleParallel(taskId, self.jobs[taskId]["spec"])
+      
+      print('decide wether to schedule build task: ', taskId)
+      # if the task is a build job, and there are resources, add new worker for it. after the build is done - remove the worker
+      # use a function - checkResourcesForTaskId(taskId)
+      
+      if not taskId.startswith('build'):
+        transition(taskId, self.pendingJobs, self.runningJobs)
+        self.__scheduleParallel(taskId, self.jobs[taskId]["spec"])
+      else:
+        if self.checkResourcesForTaskId(taskId):
+          self.parallelThreads += 1
+          transition(taskId, self.pendingJobs, self.runningJobs)
+          t = Thread(target=self.__createWorker())
+          t.daemon = True
+          t.start()
+          self.__scheduleParallel(taskId, self.jobs[taskId]["spec"])
+  
+  def checkResourcesForTaskId(self, taskId):
+    # this should cheeck resources
+    return True
 
   # Update the job with the result of running.
   def __updateJobStatus(self, taskId, error):
