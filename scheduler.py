@@ -97,7 +97,7 @@ class Scheduler(object):
           s = StringIO()
           traceback.print_exc(file=s)
           result = s.getvalue()
-          
+        self.returnResourcesForTask(taskId) # for anything else than build job should be zeros
         if type(result) == _SchedulerQuitCommand:
           self.notifyMaster(self.__releaseWorker)
           return
@@ -152,21 +152,25 @@ class Scheduler(object):
       print('decide wether to schedule build task: ', taskId)
       # if the task is a build job, and there are resources, add new worker for it. after the build is done - remove the worker
       # use a function - checkResourcesForTaskId(taskId)
-      
       if not taskId.startswith('build'):
         transition(taskId, self.pendingJobs, self.runningJobs)
         self.__scheduleParallel(taskId, self.jobs[taskId]["spec"])
       else:
         if self.checkResourcesForTaskId(taskId):
-          self.parallelThreads += 1
+          if self.parallelThreads < 10: # 10 jobs should be enough, or check if the queue is empty 
+            self.parallelThreads += 1
+            t = Thread(target=self.__createWorker())
+            t.daemon = True
+            t.start()
           transition(taskId, self.pendingJobs, self.runningJobs)
-          t = Thread(target=self.__createWorker())
-          t.daemon = True
-          t.start()
           self.__scheduleParallel(taskId, self.jobs[taskId]["spec"])
   
   def checkResourcesForTaskId(self, taskId):
     # this should cheeck resources
+    return True
+  def allocReourcesForTask(self, taskId):
+    return True
+  def returnResourcesForTask(self, taskId):
     return True
 
   # Update the job with the result of running.
