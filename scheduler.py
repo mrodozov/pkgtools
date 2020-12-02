@@ -60,6 +60,7 @@ class Scheduler(object):
     self.resultsQueue.put((threading.currentThread(), self.finalJobSpec))
     self.jobs["final-job"] = {"scheduler": "serial", "deps": self.finalJobSpec, "spec": self.finalJobSpec}
     self.pendingJobs.append("final-job")
+    self.workerslimit = 0
 
   def run(self):
     for i in xrange(self.parallelThreads):
@@ -106,14 +107,18 @@ class Scheduler(object):
           return
         self.log(str(item) + " done")
         self.notifyMaster(self.__updateJobStatus, taskId, result)
+        self.notifyMaster(self.releaseResourcesForJob, taskId)
         self.notifyMaster(self.__rescheduleParallel)
     return worker
 
   def __doNotifications(self):
     self.rescheduleParallel = False
+    #print('         starting do notifications round')
     while self.notifyQueue.qsize():
       who, item = self.notifyQueue.get()
       item[0](*item[1:])
+      # check if any of this can actually turn the rescheduleParallel to True
+    #print('         end do notification round, reschedule is:', self.rescheduleParallel)
     if self.rescheduleParallel:
        self.__doRescheduleParallel()
 
@@ -154,6 +159,9 @@ class Scheduler(object):
     if dumpMsg:
       self.runningJobsCache = self.runningJobs[:]
       self.log("Running tasks: %s" % self.runningJobs,30)
+    nonBuildJobs = []
+    buildJobs =[]
+    
     for taskId in parallelJobs:
       pendingDeps = [dep for dep in self.jobs[taskId]["deps"] if not dep in self.doneJobs]
       if pendingDeps:
@@ -161,8 +169,35 @@ class Scheduler(object):
           self.log("Pending tasks: %s: %s" % (taskId, pendingDeps),30)
         continue
       # No broken dependencies and no pending ones. we can continue.
+      if taskId.startswith('build-'):
+        buildJobs.append(taskId)
+      else:
+        nonBuildJobs.append(taskId)
+    buildJobs = self.selectBuildJobsForParallelQueue(buildJobs)
+    # put the build jobs on the queue first
+    for taskId in buildJobs + nonBuildJobs:
+      print('putting build jobs first, task id:', taskId)
       transition(taskId, self.pendingJobs, self.runningJobs)
       self.__scheduleParallel(taskId, self.jobs[taskId]["spec"])
+
+  def selectBuildJobsForParallelQueue(self, listOfBuildJobsIds):
+    selected_jobs = []
+    for taskId in listOfBuildJobsIds:
+      if self.workerslimit < 4:
+        self.workerslimit += 1
+        selected_jobs.append(taskId)
+      else:
+        print('resources limited, in this case number of parallel threads. list to try to put: ', listOfBuildJobsIds)
+    return selected_jobs
+
+  def allocateResourcesForJobs(self, listOfJobIDs):
+    return True
+  
+  def releaseResourcesForJob(self, taskId):
+    if taskId.startswith('build-'):
+      print('releasing resource for a parallel job, limit is:', self.workerslimit)
+      self.workerslimit -= 1
+      print('resource released, limit is:', self.workerslimit)
 
   # Update the job with the result of running.
   def __updateJobStatus(self, taskId, error):
